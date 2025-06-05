@@ -1,4 +1,4 @@
-const CACHE_NAME = 'simple-pwa-v1';
+const CACHE_NAME = 'simple-pwa-v111';
 const FILES_TO_CACHE = [
     '/index.html',
     '/manifest.json',

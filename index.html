@@ -9,7 +9,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 Web BLE App</title>
+    <title>Bot</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="">
     <link rel="manifest" href="manifest.json" />
@@ -32,10 +32,24 @@
             margin: 0 5px;
             cursor: pointer;
         }
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        #tiltSlider {
+            width: 80%;
+            max-width: 400px;
+            margin-top: 30px;
+        }
+        .value {
+            font-size: 24px;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
-  <h1>ESP32 Web BLE Application</h1>
+  <h1>ESP32 Web BLE Application v1.10</h1>
   <button id="connectBleButton">Connect to BLE Device</button>
   <button id="disconnectBleButton">Disconnect BLE Device</button>
   <p>BLE state: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
@@ -48,6 +62,9 @@
     <button id="offButton">ON</button>
   </div>
   <p>Last value sent: <span id="valueSent"></span></p>
+  <input type="range" id="tiltSlider" min="0" max="180" step="1" value="0" disabled>
+  <div class="value" id="tiltValue">Tilt: ?</div>
+  <div class="value" id="isWritingOutput">Is writing?</div>
 </body>
 <script>
     // DOM Elements
@@ -64,12 +81,20 @@
     var deviceName ='ESP32';
     var bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
     var ledCharacteristic = '19b10002-e8f2-537e-4f6c-d104768a1214';
+    var wheelCharacteristic = '19b10003-e8f2-537e-4f6c-d104768a1214';
     var sensorCharacteristic= '19b10001-e8f2-537e-4f6c-d104768a1214';
 
     //Global Variables to Handle Bluetooth
     var bleServer;
     var bleServiceFound;
     var sensorCharacteristicFound;
+
+    const leftOffset = 5;
+    const rightOffset = 5;
+
+    const isWritingOutput = document.getElementById('isWritingOutput');
+    const slider = document.getElementById('tiltSlider');
+    const tiltValue = document.getElementById('tiltValue');
 
     // Connect Button (search for BLE Devices only if BLE is available)
     connectButton.addEventListener('click', (event) => {
@@ -155,7 +180,7 @@
     }
 
     function writeOnCharacteristic(value){
-        if (bleServer && bleServer.connected) {
+        if (bleServer && bleServer.connected && bleServiceFound) {
             bleServiceFound.getCharacteristic(ledCharacteristic)
             .then(characteristic => {
                 console.log("Found the LED characteristic: ", characteristic.uuid);
@@ -171,9 +196,41 @@
             });
         } else {
             console.error ("Bluetooth is not connected. Cannot write to characteristic.")
-            window.alert("Bluetooth is not connected. Cannot write to characteristic. \n Connect to BLE first!")
+            // window.alert("Bluetooth is not connected. Cannot write to characteristic. \n Connect to BLE first!")
         }
     }
+
+    let isWriting = false;
+    let nextTimeout;
+    function writeOnCharacteristicWheels(left, right) {
+        if (isWriting) {
+            clearTimeout(nextTimeout);
+            nextTimeout = setTimeout(() => { writeOnCharacteristicWheels(left, right) }, 0);
+            return;
+        }
+        if (bleServer && bleServer.connected && bleServiceFound) {
+            isWriting = true;
+            bleServiceFound.getCharacteristic(wheelCharacteristic)
+                .then(characteristic => {
+                    const data = new Uint8Array([left, right]);
+                    return characteristic.writeValue(data);
+                })
+                .then(() => {
+                    isWriting = false;
+                    // console.log("Values written to wheelcharacteristic:", left, right);
+                })
+                .catch(error => {
+                    isWriting = false;
+                    console.error("Error writing to the wheel characteristic: ", error);
+                });
+        } else {
+            console.error("Bluetooth is not connected. Cannot write to characteristic.");
+            isWriting = false
+        }
+    }
+    setInterval(() => {
+        isWritingOutput.textContent = `Is Writing ${isWriting}`;
+    }, 100);
 
     function disconnectDevice() {
         console.log("Disconnect Device.");
@@ -214,6 +271,45 @@
 
         var datetime = day + "/" + month + "/" + year + " at " + hours + ":" + minutes + ":" + seconds;
         return datetime;
+    }
+
+    // Check if the device supports DeviceOrientationEvent
+    let lastBeta = 0;
+    if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', function (event) {
+            // Get the beta value (tilt forward/backward on the X-axis)
+            let beta = Math.round(event.beta);
+
+            // Remove unnecessary writes
+            if (beta === lastBeta) return;
+            lastBeta = beta;
+
+            if (!Number.isFinite(event.beta)) {
+                tiltValue.textContent = 'Unknown tilt: ' + beta;
+                slider.value = 90;
+                return;
+            }
+            
+            slider.value = beta;
+            tiltValue.textContent = `Tilt: ${beta}`;
+
+            const balanceBuffer = 1;
+            
+            if (beta < 90 - balanceBuffer && beta > 90 + balanceBuffer) {
+                // Balanced. Motors stop.
+                writeOnCharacteristicWheels(leftOffset, rightOffset);
+            } else if (beta < 90) {
+                writeOnCharacteristicWheels(60, 180 - 60);
+            } else {
+                writeOnCharacteristicWheels(180 - 60, 60);
+            }
+            
+            // const left = Math.min(180, Math.max(0, beta)) + leftOffset;
+            // const right = 180 - Math.min(180, Math.max(0, beta)) + rightOffset;
+            // writeOnCharacteristicWheels(left, right);
+        });
+    } else {
+        alert("Your device does not support tilt detection.");
     }
 
 

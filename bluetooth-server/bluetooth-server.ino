@@ -8,21 +8,28 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <ESP32Servo.h>
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pSensorCharacteristic = NULL;
 BLECharacteristic* pLedCharacteristic = NULL;
+BLECharacteristic* pWheelCharacteristic = NULL;
 bool deviceConnected = false;
 bool oldDeviceConnected = false;
 uint32_t value = 0;
+Servo leftServo;
+Servo rightServo;
 
-const int ledPin = 22; // Use the appropriate GPIO pin for your setup
+const int LED_PIN = 22; // Use the appropriate GPIO pin for your setup
+const int LEFT_SERVO_PIN = 19;
+const int RIGHT_SERVO_PIN = 23;
 
 // See the following for generating UUIDs:
 // https://www.uuidgenerator.net/
 #define SERVICE_UUID        "19b10000-e8f2-537e-4f6c-d104768a1214"
 #define SENSOR_CHARACTERISTIC_UUID "19b10001-e8f2-537e-4f6c-d104768a1214"
 #define LED_CHARACTERISTIC_UUID "19b10002-e8f2-537e-4f6c-d104768a1214"
+#define WHEEL_CHARACTERISTIC_UUID "19b10003-e8f2-537e-4f6c-d104768a1214"
 
 class MyServerCallbacks: public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
@@ -43,17 +50,33 @@ class MyCharacteristicCallbacks : public BLECharacteristicCallbacks {
 
       int receivedValue = static_cast<int>(value[0]);
       if (receivedValue == 1) {
-        digitalWrite(ledPin, HIGH);
+        digitalWrite(LED_PIN, HIGH);
       } else {
-        digitalWrite(ledPin, LOW);
+        digitalWrite(LED_PIN, LOW);
       }
+    }
+  }
+};
+
+class MyWheelCharacteristicCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pWheelCharacteristic) {
+    String value = pWheelCharacteristic->getValue();
+    if (value.length() > 0) {
+      Serial.print("Wheel characteristic event, written: ");
+      int left = static_cast<int>(value[0]);
+      int right = static_cast<int>(value[1]);
+      Serial.print(left); // Print the integer value
+      Serial.print(", ");
+      Serial.println(right); // Print the integer value
+      leftServo.write(left);
+      rightServo.write(right);
     }
   }
 };
 
 void setup() {
   Serial.begin(115200);
-  pinMode(ledPin, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
 
   // Create the BLE Device
   BLEDevice::init("ESP32");
@@ -79,9 +102,15 @@ void setup() {
                       LED_CHARACTERISTIC_UUID,
                       BLECharacteristic::PROPERTY_WRITE
                     );
+  // Create the wheel Characteristic
+  pWheelCharacteristic = pService->createCharacteristic(
+                      WHEEL_CHARACTERISTIC_UUID,
+                      BLECharacteristic::PROPERTY_WRITE
+                    );
 
-  // Register the callback for the ON button characteristic
+  // Register the callback for the characteristics
   pLedCharacteristic->setCallbacks(new MyCharacteristicCallbacks());
+  pWheelCharacteristic->setCallbacks(new MyWheelCharacteristicCallbacks());
 
   // https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.descriptor.gatt.client_characteristic_configuration.xml
   // Create a BLE Descriptor
@@ -117,11 +146,15 @@ void loop() {
     pServer->startAdvertising(); // restart advertising
     Serial.println("Start advertising");
     oldDeviceConnected = deviceConnected;
+    leftServo.detach();
+    rightServo.detach();
   }
   // connecting
   if (deviceConnected && !oldDeviceConnected) {
     // do stuff here on connecting
     oldDeviceConnected = deviceConnected;
     Serial.println("Device Connected");
+    leftServo.attach(LEFT_SERVO_PIN);
+    rightServo.attach(RIGHT_SERVO_PIN);
   }
 }
