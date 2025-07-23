@@ -49,7 +49,7 @@
     </style>
 </head>
 <body>
-  <h1>ESP32 Web BLE Application v1.10</h1>
+  <h1>ESP32 Web BLE Application v1.17</h1>
   <button id="connectBleButton">Connect to BLE Device</button>
   <button id="disconnectBleButton">Disconnect BLE Device</button>
   <p>BLE state: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
@@ -64,9 +64,77 @@
   <p>Last value sent: <span id="valueSent"></span></p>
   <input type="range" id="tiltSlider" min="0" max="180" step="1" value="0" disabled>
   <div class="value" id="tiltValue">Tilt: ?</div>
-  <div class="value" id="isWritingOutput">Is writing?</div>
+  <div id="isWritingOutput">Is writing?</div>
+  <div class="button-container">
+      <button id="correctionSpeedDown">&#8592;</button>
+      <div id="correctionSpeed">Correction: x</div>
+      <button id="correctionSpeedUp">&#8594;</button>
+  </div>
+  <div class="button-container">
+      <button id="balanceBufferDown">&#8592;</button>
+      <div id="balanceBuffer">Buffer: x</div>
+      <button id="balanceBufferUp">&#8594;</button>
+  </div>
+  <div class="button-container">
+      <button id="leftOffsetDown">&#8592;</button>
+      <div id="leftOffset">Left: x</div>
+      <button id="leftOffsetUp">&#8594;</button>
+  </div>
+  <div class="button-container">
+      <button id="rightOffsetDown">&#8592;</button>
+      <div id="rightOffset">Right: x</div>
+      <button id="rightOffsetUp">&#8594;</button>
+  </div>
 </body>
 <script>
+    class Settings {
+        // Define properties upfront (editors will now autocomplete these)
+        correctionSpeed = 80;
+        leftOffset = 5;
+        rightOffset = 5;
+        balanceBuffer = 3;
+
+        constructor() {
+            this._init('correctionSpeed', 80);
+            this._init('leftOffset', 5);
+            this._init('rightOffset', 5);
+            this._init('balanceBuffer', 3);
+        }
+
+        _init(key, defaultValue) {
+            const raw = localStorage.getItem(key);
+            let value;
+
+            if (raw === null) {
+                value = defaultValue;
+            } else if (typeof defaultValue === 'number') {
+                value = Number(raw);
+            } else if (typeof defaultValue === 'boolean') {
+                value = raw === 'true';
+            } else {
+                value = raw;
+            }
+
+            this[key] = value;
+
+            // Redefine setter to sync with localStorage
+            Object.defineProperty(this, key, {
+                get: () => value,
+                set: (val) => {
+                    if (typeof val !== typeof defaultValue) {
+                        throw new Error(`${key} must be a ${typeof defaultValue}`);
+                    }
+                    value = val;
+                    localStorage.setItem(key, val);
+                },
+                configurable: true,
+            });
+        }
+    }
+    const settings = new Settings();
+    let isWriting = false;
+    let nextTimeout;
+
     // DOM Elements
     const connectButton = document.getElementById('connectBleButton');
     const disconnectButton = document.getElementById('disconnectBleButton');
@@ -76,6 +144,31 @@
     const latestValueSent = document.getElementById('valueSent');
     const bleStateContainer = document.getElementById('bleState');
     const timestampContainer = document.getElementById('timestamp');
+    const isWritingOutput = document.getElementById('isWritingOutput');
+    const slider = document.getElementById('tiltSlider');
+    const tiltValue = document.getElementById('tiltValue');
+
+    const correctionSpeed = document.getElementById('correctionSpeed');
+    const balanceBuffer = document.getElementById('balanceBuffer');
+    const leftOffset = document.getElementById('leftOffset');
+    const rightOffset = document.getElementById('rightOffset');
+    function updateUi() {
+        correctionSpeed.textContent = `CorrectionSpeed: ${settings.correctionSpeed}`;
+        balanceBuffer.textContent = `BalanceBuffer: ${settings.balanceBuffer}`;
+        leftOffset.textContent = `LeftOffset: ${settings.leftOffset}`;
+        rightOffset.textContent = `RightOffset: ${settings.rightOffset}`;
+        writeAngleToWheels(parseInt(slider.value));
+    }
+    updateUi();
+    const correctionSpeedDown = document.getElementById('correctionSpeedDown').addEventListener('click', () => { settings.correctionSpeed--; updateUi();});
+    const correctionSpeedUp = document.getElementById('correctionSpeedUp').addEventListener('click', () => { settings.correctionSpeed++; updateUi();});
+    const balanceBufferDown = document.getElementById('balanceBufferDown').addEventListener('click', () => { settings.balanceBuffer--; updateUi();});
+    const balanceBufferUp = document.getElementById('balanceBufferUp').addEventListener('click', () => { settings.balanceBuffer++; updateUi();});
+    const leftOffsetDown = document.getElementById('leftOffsetDown').addEventListener('click', () => { settings.leftOffset--; updateUi();});
+    const leftOffsetUp = document.getElementById('leftOffsetUp').addEventListener('click', () => { settings.leftOffset++; updateUi();});
+    const rightOffsetDown = document.getElementById('rightOffsetDown').addEventListener('click', () => { settings.rightOffset--; updateUi();});
+    const rightOffsetUp = document.getElementById('rightOffsetUp').addEventListener('click', () => { settings.rightOffset++; updateUi();});
+
 
     //Define BLE Device Specs
     var deviceName ='ESP32';
@@ -88,13 +181,6 @@
     var bleServer;
     var bleServiceFound;
     var sensorCharacteristicFound;
-
-    const leftOffset = 5;
-    const rightOffset = 5;
-
-    const isWritingOutput = document.getElementById('isWritingOutput');
-    const slider = document.getElementById('tiltSlider');
-    const tiltValue = document.getElementById('tiltValue');
 
     // Connect Button (search for BLE Devices only if BLE is available)
     connectButton.addEventListener('click', (event) => {
@@ -195,13 +281,14 @@
                 console.error("Error writing to the LED characteristic: ", error);
             });
         } else {
-            console.error ("Bluetooth is not connected. Cannot write to characteristic.")
+            const e = 'Bluetooth is not connected. Cannot write to characteristic.';
+            console.error (e)
+            bleStateContainer.innerHTML = e;
+            bleStateContainer.style.color = "#d13a30";
             // window.alert("Bluetooth is not connected. Cannot write to characteristic. \n Connect to BLE first!")
         }
     }
 
-    let isWriting = false;
-    let nextTimeout;
     function writeOnCharacteristicWheels(left, right) {
         if (isWriting) {
             clearTimeout(nextTimeout);
@@ -213,6 +300,7 @@
             bleServiceFound.getCharacteristic(wheelCharacteristic)
                 .then(characteristic => {
                     const data = new Uint8Array([left, right]);
+                    console.log('Writing wheels', left, right);
                     return characteristic.writeValue(data);
                 })
                 .then(() => {
@@ -224,13 +312,16 @@
                     console.error("Error writing to the wheel characteristic: ", error);
                 });
         } else {
-            console.error("Bluetooth is not connected. Cannot write to characteristic.");
+            const e = "Bluetooth is not connected. Cannot write to characteristic.";
+            console.error(e);
+            bleStateContainer.innerHTML = e;
+            bleStateContainer.style.color = "#d13a30";
             isWriting = false
         }
     }
     setInterval(() => {
         isWritingOutput.textContent = `Is Writing ${isWriting}`;
-    }, 100);
+    }, 200);
 
     function disconnectDevice() {
         console.log("Disconnect Device.");
@@ -273,6 +364,21 @@
         return datetime;
     }
 
+    function writeAngleToWheels(beta) {
+        if (beta < 90 + settings.balanceBuffer && beta > 90 - settings.balanceBuffer) {
+            // Balanced. Motors stop.
+            writeOnCharacteristicWheels(settings.leftOffset, settings.rightOffset);
+        } else if (beta < 90) {
+            writeOnCharacteristicWheels(60, 180 - 60);
+        } else {
+            writeOnCharacteristicWheels(180 - 60, 60);
+        }
+
+        // const left = Math.min(180, Math.max(0, beta)) + settings.leftOffset;
+        // const right = 180 - Math.min(180, Math.max(0, beta)) + settings.rightOffset;
+        // writeOnCharacteristicWheels(left, right);
+    }
+
     // Check if the device supports DeviceOrientationEvent
     let lastBeta = 0;
     if (window.DeviceOrientationEvent) {
@@ -289,24 +395,9 @@
                 slider.value = 90;
                 return;
             }
-            
             slider.value = beta;
             tiltValue.textContent = `Tilt: ${beta}`;
-
-            const balanceBuffer = 1;
-            
-            if (beta < 90 - balanceBuffer && beta > 90 + balanceBuffer) {
-                // Balanced. Motors stop.
-                writeOnCharacteristicWheels(leftOffset, rightOffset);
-            } else if (beta < 90) {
-                writeOnCharacteristicWheels(60, 180 - 60);
-            } else {
-                writeOnCharacteristicWheels(180 - 60, 60);
-            }
-            
-            // const left = Math.min(180, Math.max(0, beta)) + leftOffset;
-            // const right = 180 - Math.min(180, Math.max(0, beta)) + rightOffset;
-            // writeOnCharacteristicWheels(left, right);
+            writeAngleToWheels(beta);
         });
     } else {
         alert("Your device does not support tilt detection.");
