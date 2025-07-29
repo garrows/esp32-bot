@@ -223,7 +223,7 @@ function writeOnCharacteristicWheels(left, right) {
                 console.error("Error writing to the wheel characteristic: ", error);
             });
     } else {
-        const e = "Bluetooth is not connected. Cannot write to characteristic.";
+        const e = `Bluetooth is not connected. Cannot write to characteristic. ${left} ${right}`;
         console.error(e);
         bleStateContainer.innerHTML = e;
         bleStateContainer.style.color = "#d13a30";
