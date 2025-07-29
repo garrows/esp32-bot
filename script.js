@@ -1,0 +1,319 @@
+class Settings {
+    // Define properties upfront (editors will now autocomplete these)
+    correctionSpeed = 60;
+    leftOffset = 5;
+    rightOffset = 5;
+    balanceBuffer = 3;
+
+    constructor() {
+        this._init('correctionSpeed', 80);
+        this._init('leftOffset', 5);
+        this._init('rightOffset', 5);
+        this._init('balanceBuffer', 3);
+    }
+
+    _init(key, defaultValue) {
+        const raw = localStorage.getItem(key);
+        let value;
+
+        if (raw === null) {
+            value = defaultValue;
+        } else if (typeof defaultValue === 'number') {
+            value = Number(raw);
+        } else if (typeof defaultValue === 'boolean') {
+            value = raw === 'true';
+        } else {
+            value = raw;
+        }
+
+        this[key] = value;
+
+        // Redefine setter to sync with localStorage
+        Object.defineProperty(this, key, {
+            get: () => value,
+            set: (val) => {
+                if (typeof val !== typeof defaultValue) {
+                    throw new Error(`${key} must be a ${typeof defaultValue}`);
+                }
+                value = val;
+                localStorage.setItem(key, val);
+            },
+            configurable: true,
+        });
+    }
+}
+const settings = new Settings();
+let isWriting = false;
+let nextTimeout;
+
+// DOM Elements
+const connectButton = document.getElementById('connectBleButton');
+const disconnectButton = document.getElementById('disconnectBleButton');
+const onButton = document.getElementById('onButton');
+const offButton = document.getElementById('offButton');
+const retrievedValue = document.getElementById('valueContainer');
+const bleStateContainer = document.getElementById('bleState');
+const timestampContainer = document.getElementById('timestamp');
+const isWritingOutput = document.getElementById('isWritingOutput');
+const slider = document.getElementById('tiltSlider');
+const tiltValue = document.getElementById('tiltValue');
+
+const correctionSpeed = document.getElementById('correctionSpeed');
+const balanceBuffer = document.getElementById('balanceBuffer');
+const leftOffset = document.getElementById('leftOffset');
+const rightOffset = document.getElementById('rightOffset');
+function updateUi() {
+    correctionSpeed.textContent = `CorrectionSpeed: ${settings.correctionSpeed}`;
+    balanceBuffer.textContent = `BalanceBuffer: ${settings.balanceBuffer}`;
+    leftOffset.textContent = `LeftOffset: ${settings.leftOffset}`;
+    rightOffset.textContent = `RightOffset: ${settings.rightOffset}`;
+    writeAngleToWheels(parseInt(slider.value));
+}
+updateUi();
+const correctionSpeedDown = document.getElementById('correctionSpeedDown').addEventListener('click', () => { settings.correctionSpeed--; updateUi(); });
+const correctionSpeedUp = document.getElementById('correctionSpeedUp').addEventListener('click', () => { settings.correctionSpeed++; updateUi(); });
+const balanceBufferDown = document.getElementById('balanceBufferDown').addEventListener('click', () => { settings.balanceBuffer--; updateUi(); });
+const balanceBufferUp = document.getElementById('balanceBufferUp').addEventListener('click', () => { settings.balanceBuffer++; updateUi(); });
+const leftOffsetDown = document.getElementById('leftOffsetDown').addEventListener('click', () => { settings.leftOffset--; updateUi(); });
+const leftOffsetUp = document.getElementById('leftOffsetUp').addEventListener('click', () => { settings.leftOffset++; updateUi(); });
+const rightOffsetDown = document.getElementById('rightOffsetDown').addEventListener('click', () => { settings.rightOffset--; updateUi(); });
+const rightOffsetUp = document.getElementById('rightOffsetUp').addEventListener('click', () => { settings.rightOffset++; updateUi(); });
+
+
+//Define BLE Device Specs
+var deviceName = 'ESP32';
+var bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
+var ledCharacteristic = '19b10002-e8f2-537e-4f6c-d104768a1214';
+var wheelCharacteristic = '19b10003-e8f2-537e-4f6c-d104768a1214';
+var sensorCharacteristic = '19b10001-e8f2-537e-4f6c-d104768a1214';
+
+//Global Variables to Handle Bluetooth
+var bleServer;
+var bleServiceFound;
+var sensorCharacteristicFound;
+
+// Connect Button (search for BLE Devices only if BLE is available)
+connectButton.addEventListener('click', (event) => {
+    if (isWebBluetoothEnabled()) {
+        connectToDevice();
+    }
+});
+
+// Disconnect Button
+disconnectButton.addEventListener('click', disconnectDevice);
+
+// Write to the ESP32 LED Characteristic
+onButton.addEventListener('click', () => writeOnCharacteristic(1));
+offButton.addEventListener('click', () => writeOnCharacteristic(0));
+
+// Check if BLE is available in your Browser
+function isWebBluetoothEnabled() {
+    if (!navigator.bluetooth) {
+        console.log("Web Bluetooth API is not available in this browser!");
+        bleStateContainer.innerHTML = "Web Bluetooth API is not available in this browser!";
+        return false
+    }
+    console.log('Web Bluetooth API supported in this browser.');
+    return true
+}
+
+// Connect to BLE Device and Enable Notifications
+function connectToDevice() {
+    console.log('Initializing Bluetooth...');
+    navigator.bluetooth.requestDevice({
+        filters: [{ name: deviceName }],
+        optionalServices: [bleService]
+    })
+        .then(device => {
+            console.log('Device Selected:', device.name);
+            bleStateContainer.innerHTML = 'Connected to device ' + device.name;
+            bleStateContainer.style.color = "#24af37";
+            device.addEventListener('gattservicedisconnected', onDisconnected);
+            return device.gatt.connect();
+        })
+        .then(gattServer => {
+            bleServer = gattServer;
+            console.log("Connected to GATT Server");
+            return bleServer.getPrimaryService(bleService);
+        })
+        .then(service => {
+            bleServiceFound = service;
+            console.log("Service discovered:", service.uuid);
+            return service.getCharacteristic(sensorCharacteristic);
+        })
+        .then(characteristic => {
+            console.log("Characteristic discovered:", characteristic.uuid);
+            sensorCharacteristicFound = characteristic;
+            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicChange);
+            characteristic.startNotifications();
+            console.log("Notifications Started.");
+            return characteristic.readValue();
+        })
+        .then(value => {
+            console.log("Read value: ", value);
+            const decodedValue = new TextDecoder().decode(value);
+            console.log("Decoded value: ", decodedValue);
+            retrievedValue.innerHTML = decodedValue;
+        })
+        .catch(error => {
+            console.log('Error: ', error);
+        })
+}
+
+function onDisconnected(event) {
+    console.log('Device Disconnected:', event.target.device.name);
+    bleStateContainer.innerHTML = "Device disconnected";
+    bleStateContainer.style.color = "#d13a30";
+
+    connectToDevice();
+}
+
+function handleCharacteristicChange(event) {
+    const newValueReceived = new TextDecoder().decode(event.target.value);
+    console.log("Characteristic value changed: ", newValueReceived);
+    retrievedValue.innerHTML = newValueReceived;
+    timestampContainer.innerHTML = getDateTime();
+}
+
+function writeOnCharacteristic(value) {
+    if (bleServer && bleServer.connected && bleServiceFound) {
+        bleServiceFound.getCharacteristic(ledCharacteristic)
+            .then(characteristic => {
+                console.log("Found the LED characteristic: ", characteristic.uuid);
+                const data = new Uint8Array([value]);
+                return characteristic.writeValue(data);
+            })
+            .then(() => {
+                console.log("Value written to LEDcharacteristic:", value);
+            })
+            .catch(error => {
+                console.error("Error writing to the LED characteristic: ", error);
+            });
+    } else {
+        const e = 'Bluetooth is not connected. Cannot write to characteristic.';
+        console.error(e)
+        bleStateContainer.innerHTML = e;
+        bleStateContainer.style.color = "#d13a30";
+        // window.alert("Bluetooth is not connected. Cannot write to characteristic. \n Connect to BLE first!")
+    }
+}
+
+function writeOnCharacteristicWheels(left, right) {
+    if (isWriting) {
+        clearTimeout(nextTimeout);
+        nextTimeout = setTimeout(() => { writeOnCharacteristicWheels(left, right) }, 0);
+        return;
+    }
+    if (bleServer && bleServer.connected && bleServiceFound) {
+        isWriting = true;
+        bleServiceFound.getCharacteristic(wheelCharacteristic)
+            .then(characteristic => {
+                const data = new Uint8Array([left, right]);
+                console.log('Writing wheels', left, right);
+                return characteristic.writeValue(data);
+            })
+            .then(() => {
+                isWriting = false;
+                // console.log("Values written to wheelcharacteristic:", left, right);
+            })
+            .catch(error => {
+                isWriting = false;
+                console.error("Error writing to the wheel characteristic: ", error);
+            });
+    } else {
+        const e = `Bluetooth is not connected. Cannot write to characteristic. ${left} ${right}`;
+        console.error(e);
+        bleStateContainer.innerHTML = e;
+        bleStateContainer.style.color = "#d13a30";
+        isWriting = false
+    }
+}
+setInterval(() => {
+    isWritingOutput.textContent = `Is Writing ${isWriting}`;
+}, 200);
+
+function disconnectDevice() {
+    console.log("Disconnect Device.");
+    if (bleServer && bleServer.connected) {
+        if (sensorCharacteristicFound) {
+            sensorCharacteristicFound.stopNotifications()
+                .then(() => {
+                    console.log("Notifications Stopped");
+                    return bleServer.disconnect();
+                })
+                .then(() => {
+                    console.log("Device Disconnected");
+                    bleStateContainer.innerHTML = "Device Disconnected";
+                    bleStateContainer.style.color = "#d13a30";
+
+                })
+                .catch(error => {
+                    console.log("An error occurred:", error);
+                });
+        } else {
+            console.log("No characteristic found to disconnect.");
+        }
+    } else {
+        // Throw an error if Bluetooth is not connected
+        console.error("Bluetooth is not connected.");
+        window.alert("Bluetooth is not connected.")
+    }
+}
+
+function getDateTime() {
+    var currentdate = new Date();
+    var day = ("00" + currentdate.getDate()).slice(-2); // Convert day to string and slice
+    var month = ("00" + (currentdate.getMonth() + 1)).slice(-2);
+    var year = currentdate.getFullYear();
+    var hours = ("00" + currentdate.getHours()).slice(-2);
+    var minutes = ("00" + currentdate.getMinutes()).slice(-2);
+    var seconds = ("00" + currentdate.getSeconds()).slice(-2);
+
+    var datetime = day + "/" + month + "/" + year + " at " + hours + ":" + minutes + ":" + seconds;
+    return datetime;
+}
+
+function writeAngleToWheels(beta) {
+    if (beta < 90 + settings.balanceBuffer && beta > 90 - settings.balanceBuffer) {
+        // Balanced. Motors stop.
+        writeOnCharacteristicWheels(settings.leftOffset, settings.rightOffset);
+    } else if (beta < 90) {
+        writeOnCharacteristicWheels(90 - settings.correctionSpeed, 90 + settings.correctionSpeed);
+    } else {
+        writeOnCharacteristicWheels(90 + settings.correctionSpeed, 90 - settings.correctionSpeed);
+    }
+
+    // const left = Math.min(180, Math.max(0, beta)) + settings.leftOffset;
+    // const right = 180 - Math.min(180, Math.max(0, beta)) + settings.rightOffset;
+    // writeOnCharacteristicWheels(left, right);
+}
+
+// Check if the device supports DeviceOrientationEvent
+let lastBeta = 0;
+if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', function (event) {
+        // Get the beta value (tilt forward/backward on the X-axis)
+        let beta = Math.round(event.beta);
+
+        // Remove unnecessary writes
+        if (beta === lastBeta) return;
+        lastBeta = beta;
+
+        if (!Number.isFinite(event.beta)) {
+            tiltValue.textContent = 'Unknown tilt: ' + beta;
+            slider.value = 90;
+            return;
+        }
+        slider.value = beta;
+        tiltValue.textContent = `Tilt: ${beta}`;
+        writeAngleToWheels(beta);
+    });
+} else {
+    alert("Your device does not support tilt detection.");
+}
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('Service Worker registered'))
+        .catch(err => console.log('Service Worker registration failed', err));
+}
