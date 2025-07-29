@@ -274,14 +274,27 @@ function getDateTime() {
 }
 
 function writeAngleToWheels(beta) {
+    // So lazy
+    const speed1 = 90;
+    const speed2 = speed1 - 20;
+    const speed3 = speed2 - 20;
+    const speed4 = speed2 - 20;
+    let speed = 0;
     if (beta < 90 + settings.balanceBuffer && beta > 90 - settings.balanceBuffer) {
         // Balanced. Motors stop.
-        writeOnCharacteristicWheels(settings.leftOffset, settings.rightOffset);
-    } else if (beta < 90) {
-        writeOnCharacteristicWheels(90 - settings.correctionSpeed, 90 + settings.correctionSpeed);
+        writeOnCharacteristicWheels(90 + settings.leftOffset, 90 + settings.rightOffset);
+    } else if (beta < 75) { speed = speed1;
+    } else if (beta < 80) { speed = speed2;
+    } else if (beta < 85) { speed = speed3;
+    } else if (beta < 90) { speed = speed4;
+    } else if (beta > 105) { speed = -speed1;
+    } else if (beta > 100) { speed = -speed2;
+    } else if (beta > 95) { speed = -speed3;
+    } else if (beta > 90) { speed = -speed4;
     } else {
-        writeOnCharacteristicWheels(90 + settings.correctionSpeed, 90 - settings.correctionSpeed);
+        console.error('Well this shouldn\'t be possible', beta);
     }
+    writeOnCharacteristicWheels(90 + speed, 90 - speed);
 
     // const left = Math.min(180, Math.max(0, beta)) + settings.leftOffset;
     // const right = 180 - Math.min(180, Math.max(0, beta)) + settings.rightOffset;
