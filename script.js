@@ -1,6 +1,6 @@
 class Settings {
     // Define properties upfront (editors will now autocomplete these)
-    correctionSpeed = 80;
+    correctionSpeed = 60;
     leftOffset = 5;
     rightOffset = 5;
     balanceBuffer = 3;
