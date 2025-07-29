@@ -52,7 +52,6 @@ const disconnectButton = document.getElementById('disconnectBleButton');
 const onButton = document.getElementById('onButton');
 const offButton = document.getElementById('offButton');
 const retrievedValue = document.getElementById('valueContainer');
-const latestValueSent = document.getElementById('valueSent');
 const bleStateContainer = document.getElementById('bleState');
 const timestampContainer = document.getElementById('timestamp');
 const isWritingOutput = document.getElementById('isWritingOutput');
@@ -185,7 +184,6 @@ function writeOnCharacteristic(value) {
                 return characteristic.writeValue(data);
             })
             .then(() => {
-                latestValueSent.innerHTML = value;
                 console.log("Value written to LEDcharacteristic:", value);
             })
             .catch(error => {
@@ -280,9 +278,9 @@ function writeAngleToWheels(beta) {
         // Balanced. Motors stop.
         writeOnCharacteristicWheels(settings.leftOffset, settings.rightOffset);
     } else if (beta < 90) {
-        writeOnCharacteristicWheels(60, 180 - 60);
+        writeOnCharacteristicWheels(90 - settings.correctionSpeed, 90 + settings.correctionSpeed);
     } else {
-        writeOnCharacteristicWheels(180 - 60, 60);
+        writeOnCharacteristicWheels(90 + settings.correctionSpeed, 90 - settings.correctionSpeed);
     }
 
     // const left = Math.min(180, Math.max(0, beta)) + settings.leftOffset;

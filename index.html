@@ -20,19 +20,13 @@
     <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-  <h1>ESP32 Web BLE Application v1.17</h1>
-  <button id="connectBleButton">Connect to BLE Device</button>
-  <button id="disconnectBleButton">Disconnect BLE Device</button>
-  <p>BLE state: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
-  <h2>Fetched Value</h2>
-  <p><span id="valueContainer">NaN</span></p>
-  <p>Last reading: <span id="timestamp"></span></p>
-  <h2>Control LED</h2>
-  <div class="button-container">
-    <button id="onButton">OFF</button>
-    <button id="offButton">ON</button>
+  <h1>ESP32 Web BLE Application v1.20</h1>
+  <div class="button-container two-buttons">
+    <button id="connectBleButton">Connect</button>
+    <button id="disconnectBleButton">Disconnect</button>
   </div>
-  <p>Last value sent: <span id="valueSent"></span></p>
+  <p>BLE state: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
+  <p>Fetched Value:<span id="valueContainer">NaN</span></p>
   <input type="range" id="tiltSlider" min="0" max="180" step="1" value="0" disabled>
   <div class="value" id="tiltValue">Tilt: ?</div>
   <div id="isWritingOutput">Is writing?</div>
@@ -55,6 +49,11 @@
       <button id="rightOffsetDown">&#8592;</button>
       <div id="rightOffset">Right: x</div>
       <button id="rightOffsetUp">&#8594;</button>
+  </div>
+  <div class="button-container">
+    <button id="onButton">OFF</button>
+    <div>LED</div>
+    <button id="offButton">ON</button>
   </div>
 </body>
 <script src="script.js"></script>

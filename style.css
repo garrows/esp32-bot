@@ -1,16 +1,27 @@
 .button-container {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.button-container div {
+  flex-grow: 1;
+  text-align: center;
+  font-size: 16px;
 }
 
 .button-container button {
-    width: 30%;
+    width: 25%;
     padding: 10px 0;
     font-size: 1.2em;
     margin: 0 5px;
     cursor: pointer;
+}
+
+.two-buttons button {
+    width: 40%;
 }
 
 body {
@@ -22,7 +33,6 @@ body {
 #tiltSlider {
     width: 80%;
     max-width: 400px;
-    margin-top: 30px;
 }
 
 .value {
