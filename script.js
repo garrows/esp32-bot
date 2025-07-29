@@ -277,8 +277,8 @@ function writeAngleToWheels(beta) {
     // So lazy
     const speed1 = 90;
     const speed2 = speed1 - 20;
-    const speed3 = speed2 - 20;
-    const speed4 = speed3 - 20;
+    const speed3 = speed2 - 10;
+    const speed4 = speed3 - 30;
     let speed = 0;
     if (beta < 90 + settings.balanceBuffer && beta > 90 - settings.balanceBuffer) {
         // Balanced. Motors stop.
